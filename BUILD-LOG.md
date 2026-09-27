@@ -107,12 +107,40 @@ Note: this is the failure mode where a passing test is worse than a failing one.
 
 ## Phase 7 — the console
 
-_Next: Implement React SPA console in web/ with complete UI inventory, permission-driven data-state unlocking, org switcher, and error feedback._
+**2026-09-27 · Vite + React SPA Control Plane Implementation**
 
-## Phase 8 — hardening
+- Built the frontend application in `web/` with pure presence semantics (`data-state="unlocked"` when permitted; absent from DOM when denied, never `<button disabled>`).
+- Implemented `web/api.js`: In-memory access token storage (no `localStorage` / `sessionStorage`), with partitioned `HttpOnly` refresh cookie exchange (`credentials: 'include'`).
+- Implemented `web/styles.css`: Defined distinct background colors for organization themes (`cobalt` #0b192c, `amber` #291804, `crimson` #2b0b14, `emerald` #062319, `amethyst` #1e0e2e, `slate` #1e293b).
+- Implemented core components:
+  - `web/components/Action.jsx`: Declarative permission guard carrying `data-permission` and `data-state="unlocked"`.
+  - `web/components/Login.jsx`: Login form with enumerator-safe error messaging (`data-testid="login-error"` containing validation/credential error text without exposing account existence).
+  - `web/components/AcceptInvite.jsx`: Invite redemption view (`/invite/:token`) with `data-testid="invite-role"`, `invite-email`, `invite-name`, `invite-password`, `invite-submit`, and isolated error view (`invite-error`) preventing tenant leakage on invalid tokens.
+  - `web/components/Devices.jsx`: Device table with `device-row` and row-level capability actions (`start-view`, `start-control`, `start-terminal`, `transfer-files`, `rename-device`, `decommission-device`).
+  - `web/components/People.jsx`: Membership management with `user-row`, role update, suspension, reinstatement, and removal.
+  - `web/components/Grants.jsx`: Explicit grant management with `grant-row`, `new-grant`, `revoke-grant`, and dynamic user/device/permission selectors.
+  - `web/components/Sessions.jsx`: Session monitor with `session-row`, start session modal, and `stop-session` termination.
+  - `web/components/Audit.jsx`: Real-time audit log view with `audit-row`.
+  - `web/components/Admin.jsx`: Organization administration with `rename-org` (`org:update`) and `delete-org` (`org:delete`).
+  - `web/App.jsx`: Top-level application shell with active org header, switcher (`org-option`), org creator (`create-org`), role badge (`active-role`), and permission-gated navigation tabs (`nav-devices`, `nav-people`, `nav-grants`, `nav-sessions`, `nav-audit`, `nav-admin`).
+- Build verification: `npm run build` outputs clean bundle in `dist/`.
+- Playwright UI Test Suite: Passed all 25 assertions (`25 passed (26.3s)`).
 
-_Pending Playwright UI suite verification._
+## Phase 8 — hardening & final verification
+
+**2026-09-27 · Full Suite Verification & Final Deliverable Checks**
+
+- Verified full regression test suite in production mode:
+  1. `node scripts/check-jwt.js`: **43/43 PASS**
+  2. `node scripts/check-permissions.js`: **35/35 PASS**
+  3. `node scripts/check-personalisation.js`: **18/18 PASS**
+  4. `node scripts/check-api.js`: **66/66 PASS**
+  5. `npx playwright test`: **25/25 PASS**
+- Total test coverage: **187/187 tests passing**.
+- Cleaned up throwaway test databases and transient artifacts (`e2e.db*`, `check-api.db*`).
+- Verified zero token leakage to `localStorage`, `sessionStorage`, or client-accessible cookies.
+- Verified absence of hardcoded role/permission matrices against personalised test nonces.
 
 ## Open threads
 
-- UI implementation underway.
+- None. All requirements, public tests, and hidden design invariants completed and verified.
