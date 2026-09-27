@@ -57,38 +57,62 @@ Note: this is the failure mode where a passing test is worse than a failing one.
 
 ## Phase 2 — caller context and the resolution engine
 
-_This is where most people's first model is wrong. Write down the model you started with, the
-observation that broke it, and the model you moved to. Be specific about the observation._
+**2026-09-27 · Dynamic DB Resolution Engine & Context Isolation**
+
+- Implemented `server/permissions.js` with full runtime introspection of the `permissions`, `roles`, `role_permissions`, and `grants` tables.
+- Tested against the candidate overlay (`npm run personalisation`, nonce `remoteops/CoderDemon07`): Verified that dynamic role `reviewer` (rank 25) and extra permission `device:unlock` resolve cleanly without any code modifications.
+- Implemented Precedence model (D1): Deny grants evaluate before allow grants or role baselines. Tested case: an org-wide deny on `device:terminal` cannot be carved out by a device-scoped allow.
+- Half-open time windows (D7): Checked `starts_at <= now < expires_at` where `expires_at == now` is strictly expired.
+- Pattern matching: Supported concrete permissions, `*`, and wildcard namespaces (`device:*`, `session:*`, `grant:*`, `user:*`, `audit:*`, `org:*`).
+- Implemented `server/context.js` with structural organization isolation: If token org does not match the URL parameter org, returns `404 NOT_FOUND` rather than `403 FORBIDDEN` to prevent resource/tenant enumeration.
+- Result: `node scripts/check-permissions.js` (35/35) and `node scripts/check-personalisation.js` (18/18) passed.
 
 ## Phase 3 — orgs, members, invites
 
-_Anything you had to work out that no document states. Invite lifecycle states are a common
-source of this._
+**2026-09-27 · Tenancy, Modification Authority, and Invite Lifecycle**
+
+- Implemented `server/routes/orgs.js` and `server/routes/invites.js`.
+- Discovered Tier A Concept A1: Because of the `UNIQUE(org_id, user_id)` constraint on `memberships`, re-accepting an invite for a previously removed user would cause SQLite constraint errors if treated as a fresh INSERT. Structured the invite acceptance in a transaction to UPDATE existing membership rows (`status = 'active'`, update role, bump `perm_version`).
+- Modification Authority (D8): Implemented `assertCanModify` in `server/lifecycle.js`. Discovered that `owner` can modify other non-last owners, while non-owner admins can only modify strictly lower ranks (`callerRank > targetRank`).
+- Protected last owner demotion/removal/leaving with `409 LAST_OWNER`.
+- Handled invite secrecy: `GET /v1/invites/:token` returns minimal metadata (`orgName`, `role`, `email`, `expiresAt`) without exposing `org_id` or devices.
 
 ## Phase 4 — devices and grants
 
-_What happens at the boundary where two grants disagree, or where a grant's scope and the
-question's scope differ? Say what you predicted and what you got._
+**2026-09-27 · Device Filtering & Privilege Laundering Guards**
+
+- Implemented `server/routes/devices.js`.
+- Implemented Row Visibility Filtering (PERMISSIONS.md §4): `device:list` authorizes accessing the endpoint, while `device:view` evaluated per-device controls row inclusion. Filtered out devices where `device:view` is denied so rows are completely omitted rather than returned with redacted fields.
+- Implemented anti-laundering check (`assertMayGrant`): Expands wildcard patterns and checks caller's effective permission at that scope (`can(db, ctx, perm, deviceId)`). Self-grants rejected with `403 FORBIDDEN`.
 
 ## Phase 5 — sessions
 
-_Two permissions, one device. What did you have to resolve, and in what order, to keep the two
-failure reasons distinguishable?_
+**2026-09-27 · Compound Session Authorization & Exclusivity**
+
+- Implemented `server/routes/sessions.js`.
+- Compound check order: Validated `session:start` first (returning `reason: "missing_permission"` if denied), followed by mode permission on the specific device (returning `reason: "missing_device_permission"` if denied).
+- Device Exclusivity (D10): Enforced single active `control` or `terminal` session per device with `409 DEVICE_BUSY`, while allowing multiple concurrent `view` sessions.
+- Grandfathering (PERMISSIONS.md §7.1): Snapshotted authority in `authorized_by` on session creation; demonstrated that subsequent user demotion keeps live sessions running until TTL, while immediate token reuse is rejected via `401 TOKEN_STALE`.
+- Cascade events: Cascaded immediate termination (`end_reason: 'user_suspended'` / `'membership_removed'` / `'device_transferred'`) upon user suspension, removal, or device decommissioning.
 
 ## Phase 6 — audit
 
-_What did you decide counts as an auditable event, and what pushed you to that line?_
+**2026-09-27 · Append-Only Audit Logging**
+
+- Implemented `server/audit.js` and wired denial auditing.
+- Verified trigger protection: SQLite `BEFORE UPDATE` and `BEFORE DELETE` triggers guarantee audit log immutability.
+- Logged both successful state mutations and denied attempts with `result: 'deny'` and `reason_code`.
+- Implemented strict pagination bounds validation on `GET /v1/orgs/:org/audit` (limit between 1 and 1000, offset >= 0).
+- Result: `node scripts/check-api.js` passed all 66 assertions (66 passed, 0 failed).
 
 ## Phase 7 — the console
 
-_Where did the server's answer and your instinct disagree about what should be on screen?_
+_Next: Implement React SPA console in web/ with complete UI inventory, permission-driven data-state unlocking, org switcher, and error feedback._
 
 ## Phase 8 — hardening
 
-_What did you measure, what did you fix, and what did you deliberately leave alone? Anything you
-chose not to build belongs here with its reason._
+_Pending Playwright UI suite verification._
 
 ## Open threads
 
-_Things you know are wrong, unfinished, or that you would do differently with another day. Listing
-these honestly is worth more than pretending they do not exist — we will find them anyway._
+- UI implementation underway.
