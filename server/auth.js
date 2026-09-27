@@ -71,12 +71,79 @@ export function issueAccessToken({ userId, orgId, role, permVersion }, secret) {
 // `node scripts/check-jwt.js` is the public test suite for this function.
 // ---------------------------------------------------------------------------
 export function verifyAccessToken(token, secret) {
-  // YOURS TO WRITE. Every failure mode listed above must be a 401 UNAUTHENTICATED.
-  // `node scripts/check-jwt.js` is the public suite for this function.
-  throw Object.assign(
-    new Error('TODO: server/auth.js — verifyAccessToken() is yours to write (AUTH-DATA-MODEL.md §10).'),
-    { code: 'NOT_IMPLEMENTED' }
-  );
+  if (typeof token !== 'string') {
+    throw unauthenticated('token must be a string');
+  }
+
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw unauthenticated('token must have exactly three segments');
+  }
+
+  const [headerB64, payloadB64, sigB64] = parts;
+
+  // Validate base64url charset for all segments
+  const b64urlRegex = /^[A-Za-z0-9_-]+$/;
+  if (!b64urlRegex.test(headerB64) || !b64urlRegex.test(payloadB64) || !b64urlRegex.test(sigB64)) {
+    throw unauthenticated('invalid token encoding');
+  }
+
+  let header, payload;
+  try {
+    const headerJson = unb64(headerB64).toString('utf8');
+    header = JSON.parse(headerJson);
+  } catch {
+    throw unauthenticated('malformed token header');
+  }
+
+  if (!header || typeof header !== 'object' || Array.isArray(header)) {
+    throw unauthenticated('invalid token header structure');
+  }
+
+  // Algorithm pinning: pin strictly to HS256 and JWT type
+  if (header.alg !== ALG || header.typ !== 'JWT') {
+    throw unauthenticated('unsupported algorithm or token type');
+  }
+
+  // Verify signature in constant time
+  const expectedSig = createHmac('sha256', secret).update(`${headerB64}.${payloadB64}`).digest();
+  const actualSig = unb64(sigB64);
+
+  if (actualSig.length !== expectedSig.length || !timingSafeEqual(actualSig, expectedSig)) {
+    throw unauthenticated('invalid signature');
+  }
+
+  try {
+    const payloadJson = unb64(payloadB64).toString('utf8');
+    payload = JSON.parse(payloadJson);
+  } catch {
+    throw unauthenticated('malformed token payload');
+  }
+
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw unauthenticated('invalid token payload structure');
+  }
+
+  // Validate exp (half-open window: exp == now is expired)
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== 'number' || Number.isNaN(payload.exp) || payload.exp <= now) {
+    throw unauthenticated('token expired or missing exp');
+  }
+
+  // Validate issuer and audience
+  if (payload.iss !== ISS) {
+    throw unauthenticated('invalid token issuer');
+  }
+  if (payload.aud !== AUD) {
+    throw unauthenticated('invalid token audience');
+  }
+
+  // Validate jti
+  if (typeof payload.jti !== 'string' || payload.jti.trim().length === 0) {
+    throw unauthenticated('missing or invalid jti');
+  }
+
+  return payload;
 }
 
 

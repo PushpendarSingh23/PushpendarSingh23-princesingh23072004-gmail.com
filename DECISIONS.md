@@ -11,15 +11,12 @@ Rules, from `DISCOVERY-BRIEF.md`:
 
 ---
 
-### <the decision, as a claim — not "permissions", but "the org-level view counts device-scoped grants">
+### JWT algorithm pinning and structural header rejection (D11 / AUTH-DATA-MODEL.md §10)
 
-**What I chose:**
-**Why:** _(evidence: test, log line, commit)_
-**What I rejected:** _(the plausible alternative, and the specific reason it fails)_
-**What would change my mind:**
-
-<!-- Copy the block above per decision. The two stubs below show the required shape and contain no
-     engineering content — replace or delete them. -->
+**What I chose:** Reject any token where `header.alg !== 'HS256'` or `header.typ !== 'JWT'` upfront using strict literal comparison before verifying the HMAC-SHA256 signature in constant time.
+**Why:** Allowing the algorithm to be parameterized from the untrusted token header enables algorithm confusion attacks (such as `alg: none` stripping signatures or public-key confusion via HS512/RS256). In `scripts/check-jwt.js` (lines 95–102), eight explicit algorithm confusion test cases assert `401 UNAUTHENTICATED`.
+**What I rejected:** Dynamically looking up the cryptographic algorithm based on `header.alg`, or using an `alg !== 'none'` denylist. A denylist fails when attacker-supplied headers introduce alternative algorithms (e.g. RS256/HS512).
+**What would change my mind:** A multi-tenant requirement supporting asymmetric key rotation (e.g., RS256 with jwks endpoint) where a verified server-side key repository dictates the expected algorithm per key ID (`kid`).
 
 ---
 

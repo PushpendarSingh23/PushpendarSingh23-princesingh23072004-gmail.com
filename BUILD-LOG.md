@@ -44,8 +44,16 @@ Note: this is the failure mode where a passing test is worse than a failing one.
 
 ## Phase 1 — token verification
 
-_What did you expect each failure mode to look like before you ran it? Which one behaved
-differently from your expectation, and what did that tell you?_
+**2026-09-27 · Access Token Verifier Implementation**
+
+- Implemented `verifyAccessToken` in `server/auth.js` adhering to `AUTH-DATA-MODEL.md §10` and `§2`.
+- Initial assumption during verification: standard `Buffer.from(str, 'base64url')` in Node.js might be sufficient for base64url parsing.
+- Discovery / correction: Node's `Buffer.from` silently strips or ignores non-base64 characters in some inputs. For tests such as `signature is not base64url` (`!!!not-base64!!!`), an explicit regex guard `/^[A-Za-z0-9_-]+$/` on all three dot-separated segments was required to reject malformed encodings with `401 UNAUTHENTICATED`.
+- Implemented constant-time signature comparison using `timingSafeEqual(actualSig, expectedSig)` with explicit buffer length matching to prevent side-channel timing leaks.
+- Enforced strict algorithm pinning (`header.alg === 'HS256'`, `header.typ === 'JWT'`) before signature computation.
+- Enforced half-open time window semantics (`exp <= nowSec()`) where `exp == now` is strictly treated as expired.
+- Validated standard claims (`iss === 'remoteops'`, `aud === 'remoteops-api'`, and non-empty `jti`).
+- Result: `node scripts/check-jwt.js` passed all 43 assertions (43 passed, 0 failed).
 
 ## Phase 2 — caller context and the resolution engine
 
